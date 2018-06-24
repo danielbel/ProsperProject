@@ -1,0 +1,254 @@
+---
+title: "Prosper"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(knitr) 
+
+library(gridExtra) 
+ 
+library(tidyr) 
+
+```
+
+```{r}
+LD<-read.csv('prosperLoanData.csv' )
+```
+After Loading the data, we create a single credit scoore mean from the two credit score variables given to us.
+```{r}
+LD <- LD %>%
+         mutate(CreditScore = CreditScoreRangeLower / 2 +
+                              CreditScoreRangeUpper / 2)
+
+```
+
+
+
+```{r}
+# Convert LoanOriginationQuarter to begin with the year using tidyr
+# This also makes sure that any plot axis will put it in increasing order
+# of year
+
+LD$LoanOriginationQuarter <- as.character(LD$LoanOriginationQuarter)
+LD <- LD %>%
+         separate (col = LoanOriginationQuarter,
+                   into = c("Quarters", "Year"), sep = " ") %>%
+         unite(col = LoanOriginationQuarter, Year, Quarters, sep = " ")
+
+LD$LoanOriginationQuarterF <- factor(LD$LoanOriginationQuarter)
+```
+Create a single Credit Rating instead of the separate pre2009-and post 2009 ratings.
+```{r}
+rating_categories <- rev(c("HR", "E", "D", "C", "B", "A", "AA"))
+
+LD <- LD %>% mutate(CreditRating = ifelse(ProsperRating..Alpha. %in% rating_categories, as.character(ProsperRating..Alpha.), ifelse(CreditGrade %in% rating_categories, as.character(CreditGrade), NA)))
+
+LD$CreditRating <- ordered(LD$CreditRating, labels = rating_categories)
+
+
+```
+
+
+First thing we want to do is simpoly see a histogram showing the loans that are bing given out. From our histogram we see that the  most common loan is 3000. With spikes in loans equal to 10,000 as well as 15,000. This shows us that users have a propensity to take very nice round numbers for loans usually in increments of $5000.
+```{r}
+ggplot(aes(x= LoanOriginalAmount), data= LD)+
+  geom_histogram(binwidth = 1000)+
+  scale_x_continuous(breaks = seq(0, 35000, 5000))
+
+```
+
+The next plot will show a bar graph of the differnt occupation that are taking out loans.Most people prefer not to identify themselves as "other" and "proffessional" seem to be the most common indentifiers for the proffesion which takes out loans.
+
+```{r}
+ggplot(aes(x = reorder(Occupation, Occupation,
+                       function(x) -length(x))), data= LD,)+
+  geom_bar()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlab('Occupations')
+  
+```
+Next we want to see the income ranges of the borrowers taking out loans. We will use a bar graph for this.
+
+```{r}
+ggplot(aes(x= IncomeRange),data =LD)+
+  geom_bar()+
+  scale_x_discrete(limits = c("Not employed", "$0", "$1-24,999", "$25,000-49,999", "$50,000-74,999", "$75,000-99,999", "$100,000+", "Not displayed"))
+```
+An almost normal distribution with most common burrower being in the 25,000-50,000 and 50,000-75,000 income range. In the next bar graph we see that for the most part most borrrowrs are employed full-time
+
+```{r}
+ggplot(aes(x= EmploymentStatus),data =LD)+
+  geom_bar()+
+  scale_x_discrete(limits = c("Not available", "Not employed", "Other", "Part-time", "Self-employed", "Retired", "Full-time"))
+```
+Next let's take a look at credit-scores.  We will use another historgram. We see another near normal distribution, with the middle of the distribution showing users have credit scores between 625 and 750.
+
+
+
+
+```{r}
+qplot(x = CreditScore, data = LD, binwidth = 20,
+      color = I("#444444"), fill = I("#dddddd")) +
+  scale_x_continuous(limits = c(400, 900), breaks = seq(400, 900, 50))
+
+
+```
+
+Let's look at the APR rates for users. The histogram below shows a mostly normal distribution mirroring the distrbution of credit ratings. With mid-level risk borrowers (who have a credit rating between 625-750) being most common, the mid-lvel APRI between 0.14 and .25 being most common.There is a spike around 0.35 APR which shows that there is a large number of high-risk borrowers opting for this fee.
+
+```{r}
+qplot(x = BorrowerAPR, data = LD, binwidth = 0.02,
+      color = I("#424242"), fill = I("#0077C0")) +
+  scale_x_continuous(breaks = seq(0, 0.5, 0.1))
+```
+
+Let's look at Loan status of the loans. The following bar graph reveals most loans are  currently on-going ( followed closely by completed loans, and then a smaller percentage of  loans that have been charged-off or defaulted.)
+
+
+
+
+```{r}
+summary(LD$CurrentDelinquencies)
+
+qplot(x = LoanStatus, data = LD,
+      fill = I("#0077C0")) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Looking at a time-series bar graph of the number of loans given out each year, as well as a bar graph of the total dollar amount given out each year, we can see a mostly steady growth with small dips between the end of 2008 until the third quarter of 2009. This is explained by the fact that Prosper entered a quiet period during this time in which they were not issuing new loans ( they were still operating exisiting loans).
+
+```{r}
+LD.origination <- LD %>% 
+  select(Quarter = LoanOriginationQuarter,
+         Amount = LoanOriginalAmount) %>%
+  group_by(Quarter) %>%
+  summarise(Loans = n() / 1000,
+            Dollars = sum(Amount) / 1000000) %>%
+  arrange(Quarter)
+```
+
+```{r}
+ggplot(aes(x = Quarter, y = Loans), data = LD.origination) +
+  geom_bar(stat = "identity", fill = I("#0077C0")) +
+  geom_text(aes(label = round(Loans, 1)), vjust = -0.5, size = 4) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  ylab("Loans (Thousands)")
+```
+```{r}
+ggplot(aes(x = Quarter, y = Dollars), data = LD.origination) +
+  geom_bar(stat = "identity", fill = I("#2EB872")) +
+  geom_text(aes(label = round(Dollars, 0)), vjust = -0.5, size = 4) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  ylab("Dollars Loaned (Millions)")
+```
+
+Next we put all thedifferent types of defaulted loans under one category and we plot a time  series plot of completed,defaulted, and  continuing loans.
+
+
+
+```{r}
+LD <- LD %>%
+  mutate(LoanStatusGroup = ifelse(LoanStatus %in% 
+                                  c("Cancelled", "Chargedoff", "Defaulted"), 0,
+                           ifelse(LoanStatus %in%
+                                  c("Current", "FinalPaymentInProgress"), 2,
+                           ifelse(LoanStatus %in%
+                                  c("Completed"), 3,
+                                  1))))
+```
+
+```{r}
+LD$LoanStatusGroup <- factor(LD$LoanStatusGroup, levels = 0:3,
+                                labels = c("Defaulted", "Past Due", 
+                                           "Current", "Completed"))
+
+LD.defaults <- LD %>% 
+  group_by(Quarter = LoanOriginationQuarter, LoanStatusGroup) %>%
+  summarise(Loans = n() / 1000) %>%
+  arrange(Quarter, LoanStatusGroup)
+
+```
+
+```{r}
+ggplot(aes(x = Quarter, y = Loans, fill = LoanStatusGroup), 
+       data = LD.defaults) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  ylab("Loans (Thousands)") +
+  scale_fill_manual(values = c("#e51b04","#000000", "#e7f920", "#2EB872"))
+```
+
+This plot allows us to see the clear growth in total loans in the earloier years of prosper to now. The drop off at the end of 2008 and begining of 2009 is due to prosper entering a "quiet period"" where it was opening up another platofrm. During this quiet period Prosper changed it's model to allow for a new algorithm to assess credit risk and issue out pre-set rates. As we can see this allowed for a resurgence of investor confidence, with many more loans in the system post 2009, without a real increase in defaulted loans ( in fact less loans are defaulted post 2009). Good job prosper!
+
+```{r}
+LD.defaultsAS <- LD %>% 
+  group_by(Quarter = LoanOriginationQuarter,IncomeRange) %>%
+  summarise(Loans = n() / 1000) %>%
+  arrange(Quarter, IncomeRange)
+
+
+ggplot(aes(x = Quarter, y = Loans, fill = IncomeRange), 
+       data = LD.defaultsAS) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  ylab("Loans (Thousands)") +
+  scale_fill_manual(values = c("#000000","#000000","#2EB872","#FBB430", "#FBB448","#0C9CEE", "#515F65","#515F65"))
+```
+This plot tries to exploe the borrowers a little more to try and see who is borrowing more post 2009. Although all income levels have see an increase in borrwing using the prosper, I wanted to focus on the upper-middle class ( the blue and green- indicates borrowers with an annual income of 75,000+) . 
+
+Prior to 2009 , most users of prosper were middle class earners and lower, with a miniscule amount of "blue" and "green" borrowers. This changes as the company grows. This especially is apparent from 2011 until 2013. Where the yellow bar ( the middle class) does not see much growth in loans borrowed ( between 2009 and 2013 the "yellow" bar simply hover around the same levels it was before 2009) but the upper middle class(75000-99000$) and upper- class (100,000+) see a  small but steady rise in loans taken. 
+
+Still, not to be mistaken, It is clear that the "yellow" middle class borrwers are the backbone of those who take out loans through prosper - having taking out loans continously throughout all of prospers existence, and experiencign a tremendous growth in membership post 2013 ( nearly doubling in size between the 1st quarter of 2013 and the second) but the high income borrowers have seen a very nice growth trend since 2011 , and should be targeted as they are more likely to borrow larger loans ( as displayed by the graph below), bringing in investors who want to make bigger investments into play.
+```{r}
+ggplot(aes(x= IncomeRange,y = LoanOriginalAmount),data =LD)+
+  geom_point()+
+  scale_x_discrete(limits = c("Not employed", "$0", "$1-24,999", "$25,000-49,999", "$50,000-74,999", "$75,000-99,999", "$100,000+", "Not displayed"))
+```
+One thing to consider before investing in focusing on larger loans and targeting higher-income borrowers is that a medium sized loan at high risk rating such as HR, E, or D migh bring in as much yield (due to it's higher ARP rate) then a larger loan at  a lower risk rating such as (AA,A, B,or C). However if there is a growth in quaterly low-risk loans taken out, it's better for loaners to focus on targeting large sum loans.
+
+The following graph shows that , post 2009, when Prosper built a new algorithm for assesing risk ( requiring certain minimum credit scores and other cautionary measures) the growth of high-risk loans (the different shades of lighter green) is relatively small to the medium (C) and low risk ( AA,A,B) loans being taken. In fact ,post 2009 , the number of high risk loans given out is almost the same as that  pre 2009. This is the opposite for medium and low risk loans, which were miniscule before 2009 ( and still some what small until 2012)but have exploaded since 2012 more than ten-fold. 
+
+```{r}
+LD.defaultsAS <- LD %>% 
+  group_by(Quarter = LoanOriginationQuarter,CreditRating) %>%
+  summarise(Loans = n() / 1000) %>%
+  arrange(Quarter, CreditRating)
+
+
+ggplot(aes(x = Quarter, y = Loans, fill = CreditRating), 
+       data = LD.defaultsAS) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  ylab("Loans (Thousands)") +
+  scale_fill_manual(values = c("#FBB448","#FDD998","#0C9CEE","#0C9998", "#2FC763","#8AD763", "#2FC763","#515F65"))
+```
+
+This goes to show that the 2009 fix to the algorithm for assesing risk- gave out APR rates that we're unfavorable to the users with high risk-rating, resulting in relative small growth  of high-risk loans being taken. The algorithm issues much more competitive APRs for medium-to low risk loans, as we see a more rapid growth in the amount of loans taken out with a  lower risk rating.
+
+As mentioned before, the fix to the algorithm has helped ease the amount of loans defaulted. If the algorithm is kept in place , and medium- and low risk loans keep increasing, it is most benificial for investors to have medium to high loan amounts to make up for the most reasonable APR rates being paid on the lower risk loans. This is more support for the idea to try increase attention to targeting high-income earners to the Prosper platform.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
